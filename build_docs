@@ -51,7 +51,7 @@ environ['DOCKER_BUILDKIT'] = '1'
 
 
 def docker_tag(name):
-    return 'docker.elastic.co/docs/' + name + ':latest'
+    return f'docker.elastic.co/docs/{name}:latest'
 
 
 def build_docker_image(name):
@@ -124,8 +124,8 @@ class OpenBrowserState:
             self.need_preview = False
             show = False
         if not self.need_nginx and \
-                not self.need_parcel and \
-                not self.need_preview:
+                    not self.need_parcel and \
+                    not self.need_preview:
             if platform == "darwin" and 'BROWSER' not in environ:
                 # On mac webbrowser seeem to want to default to safari which
                 # is weird. If we tell it that the browser's name is `open`
@@ -167,19 +167,21 @@ def run_build_docs(args):
             # structure but build_docs is host-machine directory structure
             # agnostic and we like it that way.
             extra_name = repo_name.replace('x-pack-', '')
-            repo_mount = '/doc/%s-extra/%s' % (extra_name, repo_name)
+            repo_mount = f'/doc/{extra_name}-extra/{repo_name}'
         else:
-            repo_mount = '/doc/' + repo_name
+            repo_mount = f'/doc/{repo_name}'
         if repo_root not in mounted_doc_repo_roots:
             if repo_name in mounted_doc_repo_names:
-                raise ArgError("Can't mount two repos with the same " +
-                               "name [%s]" % repo_name)
+                raise ArgError(
+                    (
+                        "Can't mount two repos with the same "
+                        + f"name [{repo_name}]"
+                    )
+                )
+
             mounted_doc_repo_roots.add(repo_root)
             mounted_doc_repo_names.add(repo_name)
-            docker_args.extend([
-                '-v',
-                '%s:%s:ro,cached' % (repo_root, repo_mount)
-            ])
+            docker_args.extend(['-v', f'{repo_root}:{repo_mount}:ro,cached'])
             mount_alternates(path_in_repo)
         if not path.startswith(repo_root):
             cmd = 'git rev-parse --show-toplevel'
@@ -198,7 +200,7 @@ def run_build_docs(args):
                 cwd=path_in_repo)
         git_dir = git_dir.decode('utf-8').strip()
         git_dir = normpath(join(path_in_repo, git_dir))
-        alternates_file = git_dir + '/objects/info/alternates'
+        alternates_file = f'{git_dir}/objects/info/alternates'
         if not exists(alternates_file):
             return
 
@@ -211,10 +213,7 @@ def run_build_docs(args):
                 if alternates_root in mounted_alternates:
                     continue
                 mounted_alternates.add(alternates_root)
-                docker_args.extend([
-                    '-v',
-                    '%s:%s:ro,cached' % (alternates_root, alternates_root)
-                ])
+                docker_args.extend(['-v', f'{alternates_root}:{alternates_root}:ro,cached'])
                 mount_alternates(alternates_root)
 
     open_browser = False
@@ -239,24 +238,22 @@ def run_build_docs(args):
             else:
                 auth_sock = realpath(environ['SSH_AUTH_SOCK'])
                 auth_sock_dir = dirname(auth_sock)
-                docker_args.extend([
-                        '-v',
-                        '%s:%s:ro' % (auth_sock_dir, auth_sock_dir)
-                ])
-                docker_args.extend(['-e', 'SSH_AUTH_SOCK=%s' % auth_sock])
-            known_hosts = realpath('%s/.ssh/known_hosts' % environ['HOME'])
+                docker_args.extend(['-v', f'{auth_sock_dir}:{auth_sock_dir}:ro'])
+                docker_args.extend(['-e', f'SSH_AUTH_SOCK={auth_sock}'])
+            known_hosts = realpath(f"{environ['HOME']}/.ssh/known_hosts")
             if exists(known_hosts):
                 # If we have known_hosts mount them into the container so it
                 # won't ask about github
-                docker_args.extend([
-                        '-v',
-                        '%s:/tmp/.ssh/known_hosts:ro,cached' % known_hosts])
+                docker_args.extend(['-v', f'{known_hosts}:/tmp/.ssh/known_hosts:ro,cached'])
         elif arg == '--alternatives':
             alternatives = args.next_arg_or_err()
             split = alternatives.split(':')
             if len(split) != 3:
-                err = "--alternatives must be " + \
-                      "<source_lang>:<dest_lang>:<path> but was %s" % examples
+                err = (
+                    "--alternatives must be "
+                    + f"<source_lang>:<dest_lang>:<path> but was {examples}"
+                )
+
                 raise ArgError(err)
             alternatives_dir = realpath(expanduser(split[2]))
             if not isdir(alternatives_dir):
@@ -265,12 +262,12 @@ def run_build_docs(args):
                 )
             mounted = mount_docs_repo_and_dockerify_path(
                     alternatives_dir, alternatives_dir)
-            build_docs_args.append("%s:%s:%s" % (split[0], split[1], mounted))
+            build_docs_args.append(f"{split[0]}:{split[1]}:{mounted}")
         elif arg == '--conf':
             conf_file = realpath(args.next_arg_or_err())
             if not exists(conf_file):
                 raise ArgError("Can't find --conf %s" % conf_file)
-            docker_args.extend(['-v', '%s:/conf.yaml:delegated' % conf_file])
+            docker_args.extend(['-v', f'{conf_file}:/conf.yaml:delegated'])
             build_docs_args.append('/conf.yaml')
         elif arg == '--doc':
             doc_file = realpath(args.next_arg_or_err())
@@ -285,8 +282,8 @@ def run_build_docs(args):
             open_browser = OpenBrowserState()
         elif arg == '--out':
             out_dir = realpath(args.next_arg_or_err())
-            docker_args.extend(['-v', '%s:/out:delegated' % dirname(out_dir)])
-            build_docs_args.append('/out/%s' % basename(out_dir))
+            docker_args.extend(['-v', f'{dirname(out_dir)}:/out:delegated'])
+            build_docs_args.append(f'/out/{basename(out_dir)}')
             saw_out = True
         elif arg == '--push':
             author_name = from_env_or_git_config(
@@ -297,18 +294,24 @@ def run_build_docs(args):
                     'GIT_COMMITTER_NAME', 'user.name')
             committer_email = from_env_or_git_config(
                     'GIT_COMMITTER_EMAIL', 'user.email')
-            docker_args.extend([
-                    '-e', 'GIT_AUTHOR_NAME=%s' % author_name,
-                    '-e', 'GIT_AUTHOR_EMAIL=%s' % author_email,
-                    '-e', 'GIT_COMMITTER_NAME=%s' % committer_name,
-                    '-e', 'GIT_COMMITTER_EMAIL=%s' % committer_email,
-            ])
+            docker_args.extend(
+                [
+                    '-e',
+                    f'GIT_AUTHOR_NAME={author_name}',
+                    '-e',
+                    f'GIT_AUTHOR_EMAIL={author_email}',
+                    '-e',
+                    f'GIT_COMMITTER_NAME={committer_name}',
+                    '-e',
+                    f'GIT_COMMITTER_EMAIL={committer_email}',
+                ]
+            )
+
         elif arg == '--reference':
             reference_dir = realpath(args.next_arg_or_err())
             if not exists(reference_dir):
                 raise ArgError("Can't find --reference %s" % reference_dir)
-            docker_args.extend(['-v',
-                                '%s:/reference:ro,cached' % reference_dir])
+            docker_args.extend(['-v', f'{reference_dir}:/reference:ro,cached'])
             build_docs_args.append('/reference')
         elif arg == '--resource':
             resource_dir = realpath(args.next_arg_or_err())
@@ -320,13 +323,12 @@ def run_build_docs(args):
             sub = args.next_arg_or_err()
             m = re.match('(?P<repo>[^:]+):(?P<branch>[^:]+):(?P<dir>.+)', sub)
             if not m:
-                raise ArgError("Invalid --sub_dir %s" % sub)
-            sub_dir = realpath(expanduser(m.group('dir')))
+                raise ArgError(f"Invalid --sub_dir {sub}")
+            sub_dir = realpath(expanduser(m['dir']))
             if not exists(sub_dir):
                 raise ArgError("Can't find --sub_dir %s" % sub_dir)
             mounted_path = mount_docs_repo_and_dockerify_path(sub_dir, sub_dir)
-            build_docs_args.append("%s:%s:%s" % (
-                    m.group('repo'), m.group('branch'), mounted_path))
+            build_docs_args.append(f"{m['repo']}:{m['branch']}:{mounted_path}")
         arg = args.next_arg()
 
     # Mount alternatives used by the docs repo if there are any in case we have
@@ -336,7 +338,7 @@ def run_build_docs(args):
     if saw_doc and not saw_out:
         # If you don't specify --out then we dump the output into
         # $pwd/html_docs to keep backwards compatibility with build_docs.pl.
-        docker_args.extend(['-v', '%s:/out:delegated' % realpath('.')])
+        docker_args.extend(['-v', f"{realpath('.')}:/out:delegated"])
         build_docs_args.extend(['--out', "/out/html_docs"])
 
     if platform == "darwin" and saw_doc and open_browser:
@@ -376,7 +378,7 @@ def run_build_docs(args):
             match = re.match('Waiting for ssh auth to be forwarded to (.+)',
                              line)
             if match:
-                forward_ssh_auth_into_container(match.group(1), docker_run)
+                forward_ssh_auth_into_container(match[1], docker_run)
 
     handle_popen(docker_run, handle_line)
     return docker_run.returncode
@@ -483,12 +485,12 @@ class Args:
         for arg in args:
             # Fail `-foo` style arguments
             if re.match('^-[^-]+$', arg):
-                raise ArgError('Use [-%s] instead of [%s]' % (arg, arg))
+                raise ArgError(f'Use [-{arg}] instead of [{arg}]')
 
             # Replace `--foo=bar` style with `--foo bar` style
             split = arg.split('=')
             if len(split) > 2:
-                raise ArgError('Invalid argument [%s]' % arg)
+                raise ArgError(f'Invalid argument [{arg}]')
             self.args.extend(split)
         self.current = 0
 
@@ -503,7 +505,7 @@ class Args:
         prev = self.args[self.current - 1]
         next_arg = self.next_arg()
         if next_arg is None:
-            raise ArgError("Missing argument for %s" % prev)
+            raise ArgError(f"Missing argument for {prev}")
         return next_arg
 
 
@@ -522,15 +524,9 @@ def handle_popen(popen, handle_line):
     """Reads lines from a Popen object that is running and waits for it
     to complete.
     """
-    # `for line in build.stdout` buffers the lines into many chunks which
-    # isn't pleasant to use on the command line because it makes it looks
-    # like everything is happening in bursts. The implementation below
-    # spits the lines out as they come.
-    line = decode(popen.stdout.readline())
-    while line:
+    while line := decode(popen.stdout.readline()):
         line = line.rstrip()
         handle_line(line)
-        line = decode(popen.stdout.readline())
     popen.wait()
 
 
@@ -539,9 +535,7 @@ def decode(bytes_or_str):
     parameter will by a str already so we just return it. In python 3 we
     have to decode it.
     """
-    if version_info[0] < 3:
-        return bytes_or_str
-    return bytes_or_str.decode('utf-8')
+    return bytes_or_str if version_info[0] < 3 else bytes_or_str.decode('utf-8')
 
 
 def from_env_or_git_config(envname, gitname):
@@ -561,34 +555,33 @@ def encode(str_to_write):
     parameter can be written as a string so we just return it. In python 3 we
     need to encode it into a utf-8 bytes sequence.
     """
-    if version_info[0] < 3:
-        return str_to_write
-    return str_to_write.encode('utf-8')
+    return str_to_write if version_info[0] < 3 else str_to_write.encode('utf-8')
 
 
 def standard_docker_args():
     """Standard arguments used to launch docker from this script.
     """
-    docker_args = []
-    # Remove the container immediately when we're done building the docs
-    docker_args.append('--rm')
     # Make sure we create files as the current user because that is what
     # folks that use build_docs.pl expect.
     uid = getuid()
     if uid == 0:
         raise ArgError("This process isn't likely to suceed if run as root")
-    docker_args.extend(['--user', '%d:%d' % (uid, getgid())])
-    # Mount the docs build code so we can run it!
-    docker_args.extend(['-v', '%s:/docs_build:cached' % DIR])
-    # Seccomp adds a *devestating* performance overhead if you happen
-    # to have it installed.
-    docker_args.extend(['--security-opt', 'seccomp=unconfined'])
-    # Keep stdin open so the docs build can use closing it as a signal that
-    # it needs to die.
-    docker_args.append('-i')
+    docker_args = [
+        '--rm',
+        *[
+            '--user',
+            '%d:%d' % (uid, getgid()),
+            '-v',
+            f'{DIR}:/docs_build:cached',
+            '--security-opt',
+            'seccomp=unconfined',
+            '-i',
+        ],
+    ]
+
     # Pass the node name into the docker image if it is set
     if 'NODE_NAME' in environ:
-        docker_args.extend(['-e', 'NODE_NAME=%s' % environ['NODE_NAME']])
+        docker_args.extend(['-e', f"NODE_NAME={environ['NODE_NAME']}"])
     # Ritual to make nginx run (even with -t) as the mapped user
     docker_args.extend(['--tmpfs', '/run/nginx',
                         '--tmpfs', '/var/log/nginx',
@@ -608,7 +601,7 @@ if __name__ == '__main__':
     from sys import argv, stdout
     try:
         logging.basicConfig(level=logging.INFO)
-        if '--docker-run' == argv[1]:
+        if argv[1] == '--docker-run':
             if len(argv) < 4:
                 raise ArgError(
                     'Usage: build_docs --docker-run <image> <args>')
@@ -617,7 +610,7 @@ if __name__ == '__main__':
             if not cwd.startswith(DIR):
                 raise ArgError(
                     '--docker-run must be invoked from within the repo')
-            docker_cwd = '/docs_build/' + cwd[len(DIR):]
+            docker_cwd = f'/docs_build/{cwd[len(DIR):]}'
             build_docker_image(image)
             cmd = ['docker', 'run']
             cmd.extend(standard_docker_args())
@@ -628,7 +621,7 @@ if __name__ == '__main__':
             cmd.extend(argv[3:])
             returncode = subprocess.call(cmd)
             exit(returncode)
-        if '--docker-build' == argv[1]:
+        if argv[1] == '--docker-build':
             if len(argv) != 3:
                 raise ArgError(
                     'Usage: build_docs --build-image <image>')

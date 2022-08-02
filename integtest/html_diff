@@ -253,7 +253,7 @@ def html_file_diff(lhs, rhs):
 if __name__ == '__main__':
     import sys
     if len(sys.argv) != 3:
-        print("Expected exactly 2 arguments but got %s" % sys.argv[1:])
+        print(f"Expected exactly 2 arguments but got {sys.argv[1:]}")
         exit(1)
     had_diff = False
     for line in html_file_diff(sys.argv[1], sys.argv[2]):
